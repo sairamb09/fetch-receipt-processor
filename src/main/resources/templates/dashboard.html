@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard - Fetch Rewards</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <style>
+    body {
+        font-family: Arial, sans-serif;
+        margin: 20px;
+    }
+    .container {
+        max-width: 1200px;
+    }
+    .image-thumbnail {
+        max-width: 100px;
+        height: auto;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <div class="header d-flex justify-content-between align-items-center mb-4">
+    <h1>Welcome, <span th:text="${username}">User</span>!</h1>
+    <a href="/logout" class="btn btn-danger">Logout</a>
+  </div>
+
+  <!-- Receipt Processing Form -->
+  <div class="card mb-4">
+    <div class="card-header">
+      <h2>Process a New Receipt</h2>
+    </div>
+    <div class="card-body">
+      <textarea id="receiptInput" class="form-control" placeholder="Paste your receipt JSON here..."></textarea>
+      <button onclick="processReceipt()" class="btn btn-primary mt-2">Process Receipt</button>
+    </div>
+  </div>
+
+  <div class="row">
+    <!-- Left Column: Receipts Table -->
+    <div class="col-md-6">
+      <div class="card">
+        <div class="card-header">
+          <h2>Your Receipts</h2>
+        </div>
+        <div class="card-body">
+          <div id="receipts"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column: Category-Based Rewards Table -->
+    <div class="col-md-6">
+      <div class="card">
+        <div class="card-header">
+          <h2>Category-Based Rewards</h2>
+        </div>
+        <div class="card-body">
+          <table class="table table-bordered">
+            <thead class="table-dark">
+            <tr>
+              <th>Category</th>
+              <th>Points</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr th:each="entry : ${categoryPoints}">
+              <td th:text="${entry.key}"></td>
+              <td th:text="${entry.value}"></td>
+            </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  async function processReceipt() {
+      const receiptInput = document.getElementById('receiptInput').value;
+
+      try {
+          const response = await fetch('/receipts/process', {
+              method: 'POST',
+              headers: {
+                  'Content-Type': 'application/json'
+              },
+              body: receiptInput
+          });
+
+          if (!response.ok) {
+              throw new Error('Failed to process receipt');
+          }
+
+          const data = await response.json();
+          fetchReceipts(); // Refresh receipts list
+          fetchCategoryPoints(); // Refresh category points table
+
+      } catch (error) {
+          alert(`Error: ${error.message}`);
+      }
+  }
+
+  async function fetchReceipts() {
+      const receiptsDiv = document.getElementById('receipts');
+
+      try {
+          const response = await fetch('/receipts/history');
+          if (!response.ok) {
+              throw new Error('Failed to fetch receipts');
+          }
+
+          const receipts = await response.json();
+          receiptsDiv.innerHTML = Object.entries(receipts)
+              .map(([id, receipt]) => `
+                  <div class="receipt-item card p-3 mb-3">
+                      <p><strong>Retailer:</strong> ${receipt.retailer}</p>
+                      <p><strong>Date:</strong> ${receipt.purchaseDate}</p>
+                      <p><strong>Total:</strong> $${receipt.total}</p>
+                      <p><strong>Points:</strong> ${receipt.points}</p>
+                      ${receipt.imagePath ? `
+                          <a href="${receipt.imagePath}" target="_blank">
+                              <img src="${receipt.imagePath}" class="image-thumbnail" alt="Receipt Image">
+                          </a>
+                      ` : ''}
+                      <br>
+                      <input type="file" id="file-${id}" accept="image/*" style="display: none;" />
+                      <button class="btn btn-secondary mt-2" onclick="document.getElementById('file-${id}').click()">Upload Image</button>
+                      <button class="btn btn-success mt-2" onclick="uploadReceiptImage('${id}')">Submit</button>
+                  </div>
+              `)
+              .join('');
+      } catch (error) {
+          receiptsDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+      }
+  }
+
+  async function uploadReceiptImage(receiptId) {
+      const fileInput = document.getElementById(`file-${receiptId}`);
+      const file = fileInput.files[0];
+
+      if (!file) {
+          alert("Please select a file before submitting.");
+          return;
+      }
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      try {
+          const response = await fetch(`/receipts/${receiptId}/upload`, {
+              method: "POST",
+              body: formData
+          });
+
+          if (!response.ok) {
+              throw new Error("Failed to upload receipt image.");
+          }
+
+          alert("Receipt image uploaded successfully!");
+          fetchReceipts();
+      } catch (error) {
+          alert(`Error: ${error.message}`);
+      }
+  }
+
+async function fetchCategoryPoints() {
+    try {
+        const response = await fetch('/receipts/categoryPoints');
+        if (!response.ok) {
+            throw new Error('Failed to fetch category points');
+        }
+        const categoryPoints = await response.json();
+
+        // Update the table body (adjust the selector if necessary)
+        const tableBody = document.querySelector('table tbody');
+        tableBody.innerHTML = Object.entries(categoryPoints)
+            // Filter out entries where the category is an empty string (or just whitespace)
+            .filter(([category]) => category.trim() !== '')
+            .map(([category, points]) => `
+                <tr>
+                    <td>${category}</td>
+                    <td>${points}</td>
+                </tr>
+            `)
+            .join('');
+    } catch (error) {
+        console.error(`Error: ${error.message}`);
+    }
+}
+
+  // Fetch receipts when the page loads
+  fetchReceipts();
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
